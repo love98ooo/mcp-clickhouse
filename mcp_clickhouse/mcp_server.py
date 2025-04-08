@@ -40,6 +40,9 @@ def list_databases():
     logger.info("Listing all databases")
     client = create_clickhouse_client()
     result = client.command("SHOW DATABASES")
+    # Filter out system and default databases
+    if isinstance(result, list):
+        result = [db for db in result if db.lower() not in ('default', 'system')]
     logger.info(f"Found {len(result) if isinstance(result, list) else 1} databases")
     return result
 
@@ -54,21 +57,6 @@ def list_tables(database: str, like: str = None):
         query += f" LIKE {format_query_value(like)}"
     result = client.command(query)
 
-    # Get all table comments in one query
-    table_comments_query = f"SELECT name, comment FROM system.tables WHERE database = {format_query_value(database)}"
-    table_comments_result = client.query(table_comments_query)
-    table_comments = {row[0]: row[1] for row in table_comments_result.result_rows}
-
-    # Get all column comments in one query
-    column_comments_query = f"SELECT table, name, comment FROM system.columns WHERE database = {format_query_value(database)}"
-    column_comments_result = client.query(column_comments_query)
-    column_comments = {}
-    for row in column_comments_result.result_rows:
-        table, col_name, comment = row
-        if table not in column_comments:
-            column_comments[table] = {}
-        column_comments[table][col_name] = comment
-
     def get_table_info(table):
         logger.info(f"Getting schema info for table {database}.{table}")
         schema_query = f"DESCRIBE TABLE {quote_identifier(database)}.{quote_identifier(table)}"
@@ -80,11 +68,6 @@ def list_tables(database: str, like: str = None):
             column_dict = {}
             for i, col_name in enumerate(column_names):
                 column_dict[col_name] = row[i]
-            # Add comment from our pre-fetched comments
-            if table in column_comments and column_dict['name'] in column_comments[table]:
-                column_dict['comment'] = column_comments[table][column_dict['name']]
-            else:
-                column_dict['comment'] = None
             columns.append(column_dict)
 
         create_table_query = f"SHOW CREATE TABLE {database}.`{table}`"
@@ -93,7 +76,6 @@ def list_tables(database: str, like: str = None):
         return {
             "database": database,
             "name": table,
-            "comment": table_comments.get(table),
             "columns": columns,
             "create_table_query": create_table_result,
         }
