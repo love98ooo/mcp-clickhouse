@@ -116,7 +116,7 @@ def list_tables(database: str, like: str = None):
 def execute_query(query: str):
     client = create_clickhouse_client()
     try:
-        res = client.query(query, settings={"readonly": 1})
+        res = client.query(query)
         column_names = res.column_names
         rows = []
         for row in res.result_rows:
